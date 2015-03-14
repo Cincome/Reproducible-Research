@@ -1,0 +1,102 @@
+---
+output: word_document
+---
+
+###Impact of Weather Events on U.S. Economy and Public Health
+
+##Synopsis
+The purpose of the analysis of this data is to find the weather events that have the most severe impoact on the economy and public health of the United States. After subsetting the data to the time period 1990-2011, it was found that the weather event that caused the most damage to public health was the tornado, and the event that caused the most economic damage was the flood.
+
+##Global Settings
+```{r}
+echo=TRUE
+library(plyr)
+```
+
+##Reading Data
+First I read the data into r.
+```{r cache=TRUE}
+stormData <- read.csv("repdata-data-StormData.csv.bz2")
+```
+
+##Data Processing
+Once the data is loaded, I convert the date column to be recognized as dates. Then I create a histogram to show the number of weather events over time.  There is a sharp increase in the number of weather events from the mid 1990s to the end date of 2011.  This increase indicates to me that the records kept during this time period are more accurate and will give a better estimation of the impact of these events. Therefore, I subset the data set to only include events that take place after 1990.
+```{r}
+stormData$year <- as.numeric(format(as.Date(stormData$BGN_DATE, format = "%m/%d/%Y %H:%M:%S"), "%Y"))
+hist(stormData$year, breaks=30)
+storms <- stormData[stormData$year>=1990,]
+```
+
+I then sum the number of fatalities and injuries by event type. I also aggregate the data to sum both fatalities and injuries togather by event type.  
+
+The maximum number of injuries is found to be caused by `r injuries[834,1]` and the maximum number of fatalities are cause by `r deaths[130,1]`.  It should be noted that both the maximum number of injuries and the maximum sum of injuries and fatalities is caused by `r totInj[834,1]`.
+```{r}
+deaths <- aggregate(FATALITIES~EVTYPE, data=storms, FUN=sum, na.rm=TRUE)
+injuries <- aggregate(INJURIES~EVTYPE, data=storms, FUN=sum, na.rm=TRUE)
+which.max(injuries$INJURIES)
+injuries[834,]
+which.max(deaths$FATALITIES)
+deaths[130,]
+
+totInj <- aggregate(FATALITIES+INJURIES~EVTYPE, data=storms, FUN=sum, na.rm=TRUE)
+which.max(totInj[,2])
+totInj[834,]
+```
+
+The values used when computing economic impact, 'ROPDMGEXP' and 'CROPDMGEXP', must be converted so that they are on the same scale.  The meaning of the units used are explained in the code book ([Storm Events](http://ire.org/nicar/database-library/databases/storm-events/)). Both columns use a multiplier of either 'B'(billion), 'M'(million), 'K'(thousand), or  'H'(hundred). The function below will scale the appropriathe column and then add a new column to the data set.
+```{r}
+convertHelper <- function(dataset = storms, fieldName, newFieldName) {
+     totalLen <- dim(dataset)[2]
+     index <- which(colnames(dataset) == fieldName)
+     dataset[, index] <- as.character(dataset[, index])
+     logic <- !is.na(toupper(dataset[, index]))
+     dataset[logic & toupper(dataset[, index]) == "B", index] <- "9"
+     dataset[logic & toupper(dataset[, index]) == "M", index] <- "6"
+     dataset[logic & toupper(dataset[, index]) == "K", index] <- "3"
+     dataset[logic & toupper(dataset[, index]) == "H", index] <- "2"
+     dataset[logic & toupper(dataset[, index]) == "", index] <- "0"
+     dataset[, index] <- as.numeric(dataset[, index])
+     dataset[is.na(dataset[, index]), index] <- 0
+     dataset <- cbind(dataset, dataset[, index - 1] * 10^dataset[, index])
+     names(dataset)[totalLen + 1] <- newFieldName
+     return(dataset)
+ }
+
+stormProp <- convertHelper(storms,"PROPDMGEXP", "propertyDamage")
+stormPropDam <- convertHelper(stormProp,"CROPDMGEXP","cropDamage")
+```
+
+I then sum the amount of crop damages and property damages by event type. I also aggregate the data to sum both crop damages and property damages togather by event   type.  
+
+The maximum amount of crop damage is found to be caused by `r cropDam[95,1]` and the maximum amount of property damage is caused by `r propDam[170,1]`.  It should be noted that both the maximum of property damage and the maximum sum amount of property and crop damage is caused by `r propCrop[170,1]`.
+```{r}
+cropDam <- aggregate(cropDamage~EVTYPE, data=stormPropDam, FUN=sum, na.rm=TRUE)
+which.max(cropDam[,2])
+cropDam[95,]
+
+propDam <- aggregate(propertyDamage~EVTYPE, data=stormPropDam,FUN=sum,na.rm=TRUE)
+which.max(propDam[,2])
+propDam[170,]
+
+propCrop <- aggregate(propertyDamage+cropDamage~EVTYPE, data=stormPropDam,FUN=sum, na.rm=TRUE)
+which.max(propCrop[,2])
+propCrop[170,]
+```
+
+##Results
+
+As found in the data processing, the weather event most damaging to public health are tornadoes. Below is a general comparison of the top 5 most damaging weather events.
+
+```{r}
+ totInjDec <- arrange(totInj,totInj[,2], decreasing=TRUE)
+
+totInjPlot <- barplot(totInjDec[1:5,2], main="Total Number of Fatalities and Injuries per Event Type", xlab="Event Type", ylab="Number of Fatalities and Injuries", names.arg=c("Tornado", "Excessive Heat", "Flood", "Lightning", "Wind"), cex.names=0.8)
+```
+
+As previously shown, the weather events with the most economic damage are floods.  Below is a comparison of the 5 most damaging weather events.
+```{r}
+propCropDec <- arrange(propCrop, propCrop[,2],decreasing=TRUE)
+
+proCroPlot <- barplot(propCropDec[1:5,2], main="Total Cost of Property and Crop Damage by Event Type", xlab="Event Type", ylab="Total Cost", names.arg=c("Flood","Hurricane","Storm\n Surge","Tornado","Hail"), cex.names=0.8)
+
+```
